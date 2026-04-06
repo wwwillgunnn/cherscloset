@@ -21,8 +21,24 @@ const showingOutfit = ref(false);
 const currentTop = computed(() => tops[topIndex.value]);
 const currentBottom = computed(() => bottoms[bottomIndex.value]);
 
+let buttonClickSound: HTMLAudioElement | null;
+
+onMounted(() => {
+  buttonClickSound = new Audio("/audio/mouse-click.mp3");
+});
+
+const playSound = () => {
+  if (!buttonClickSound) return;
+
+  buttonClickSound.currentTime = 0; // allows spam clicking
+  buttonClickSound.play().catch((err) => {
+    console.log("Audio play blocked:", err);
+  });
+};
+
 // TODO: onclick scroll through random clothes (like case opening)
 const browseItem = () => {
+  playSound();
   topIndex.value =
     (topIndex.value + Math.floor(Math.random() * tops.length)) % tops.length;
   bottomIndex.value =
@@ -31,10 +47,12 @@ const browseItem = () => {
 };
 
 const nextItem = (index: number, items: any[]) => {
+  playSound();
   return (index + 1) % items.length;
 };
 
 const prevItem = (index: number, items: any[]) => {
+  playSound();
   return (index - 1 + items.length) % items.length;
 };
 
@@ -55,6 +73,7 @@ const nextBottom = () => {
 };
 
 const dressMe = () => {
+  playSound();
   showingOutfit.value = true;
 
   setTimeout(() => {
@@ -93,10 +112,12 @@ const dressMe = () => {
     </div>
 
     <!-- Main content -->
-    <div class="w-full max-w-xl md:max-w-3xl lg:max-w-6xl flex flex-1">
+    <div
+      class="w-full max-w-xl md:max-w-3xl lg:max-w-4xl 2xl:max-w-6xl flex flex-1"
+    >
       <!-- Browse -->
       <!-- ? Have another button for auto dress -->
-      <div class="w-1/5 flex flex-col justify-end">
+      <div class="flex flex-col justify-end">
         <div class="border-4 border-black">
           <button
             @click="browseItem"
@@ -130,7 +151,7 @@ const dressMe = () => {
                 v-if="currentTop"
                 :src="currentTop.src"
                 :alt="currentTop.alt"
-                class="max-h-72 max-w-full object-contain"
+                class="max-h-40 lg:max-h-54 2xl:max-h-72 max-w-full object-contain"
               />
               <!-- TODO: if no clothes add a plus button to add own clothes, remove background and lay flat (like depop) -->
               <span v-else>NO TOPS</span>
@@ -168,7 +189,7 @@ const dressMe = () => {
                 v-if="currentBottom"
                 :src="currentBottom.src"
                 :alt="currentBottom.alt"
-                class="max-h-72 max-w-full object-contain"
+                class="max-h-40 lg:max-h-54 2xl:max-h-72 max-w-full object-contain"
               />
               <span v-else>NO BOTTOMS</span>
             </div>
@@ -201,7 +222,7 @@ const dressMe = () => {
       </div>
 
       <!-- Dress me -->
-      <div class="w-1/5 flex flex-col justify-end">
+      <div class="flex flex-col justify-end">
         <div class="border-4 border-black">
           <button
             @click="dressMe"
