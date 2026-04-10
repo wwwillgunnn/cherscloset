@@ -1,26 +1,4 @@
 <script setup lang="ts">
-// TODO: Use supabase
-const tops = [
-  { src: "/images/tops/yellowjacket.png", alt: "Yellow jacket" },
-  { src: "/images/tops/top1.png", alt: "Black top" },
-  { src: "/images/tops/top2.png", alt: "Pink top" },
-  { src: "/images/tops/top3.png", alt: "White top" },
-];
-
-const bottoms = [
-  { src: "/images/bottoms/yellowskirt.png", alt: "Yellow skirt" },
-  { src: "/images/bottoms/bottom1.png", alt: "Blue jeans" },
-  { src: "/images/bottoms/bottom2.png", alt: "Black skirt" },
-  { src: "/images/bottoms/bottom3.png", alt: "Brown pants" },
-];
-
-const topIndex = ref(0);
-const bottomIndex = ref(0);
-const showingOutfit = ref(false);
-
-const currentTop = computed(() => tops[topIndex.value]);
-const currentBottom = computed(() => bottoms[bottomIndex.value]);
-
 let buttonClickSound: HTMLAudioElement | null;
 
 onMounted(() => {
@@ -29,24 +7,69 @@ onMounted(() => {
 
 const playSound = () => {
   if (!buttonClickSound) return;
-
-  buttonClickSound.currentTime = 0; // allows spam clicking
-  buttonClickSound.play().catch((err) => {
-    console.log("Audio play blocked:", err);
-  });
+  buttonClickSound.currentTime = 0;
+  buttonClickSound.play().catch(() => {});
 };
 
-// TODO: onclick scroll through random clothes (like case opening)
-const browseItem = () => {
+// TODO: Use supabase
+const tops = ref([
+  { src: "/images/tops/yellow-jacket.png", alt: "Yellow jacket" },
+  { isUpload: true },
+]);
+
+const bottoms = ref([
+  { src: "/images/bottoms/yellow-skirt.png", alt: "Yellow skirt" },
+  { isUpload: true },
+]);
+
+const topIndex = ref(0);
+const bottomIndex = ref(0);
+const showingOutfit = ref(false);
+
+const currentTop = computed(() => tops.value[topIndex.value]);
+const currentBottom = computed(() => bottoms.value[bottomIndex.value]);
+
+const topFileInput = ref<HTMLInputElement | null>(null);
+const bottomFileInput = ref<HTMLInputElement | null>(null);
+
+const handleUpload = (e: Event, type: "top" | "bottom") => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+
+  const newItem = {
+    src: url,
+    alt: file.name,
+  };
+
+  if (type === "top") {
+    tops.value.splice(tops.value.length - 1, 0, newItem); // insert before upload slot
+  } else {
+    bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
+  }
+};
+
+const removeItem = (index: number, type: "top" | "bottom") => {
+  const confirmed = confirm("Remove this item?");
+  if (!confirmed) return;
+
   playSound();
-  topIndex.value =
-    (topIndex.value + Math.floor(Math.random() * tops.length)) % tops.length;
-  bottomIndex.value =
-    (bottomIndex.value + Math.floor(Math.random() * bottoms.length)) %
-    bottoms.length;
+
+  const list = type === "top" ? tops.value : bottoms.value;
+
+  if (list[index]?.isUpload) return;
+
+  list.splice(index, 1);
+
+  if (type === "top") {
+    if (topIndex.value >= list.length) topIndex.value = list.length - 1;
+  } else {
+    if (bottomIndex.value >= list.length) bottomIndex.value = list.length - 1;
+  }
 };
 
-const nextItem = (index: number, items: any[]) => {
+const nextItem = (index: number, items: any[], type: "top" | "bottom") => {
   playSound();
   return (index + 1) % items.length;
 };
@@ -56,20 +79,31 @@ const prevItem = (index: number, items: any[]) => {
   return (index - 1 + items.length) % items.length;
 };
 
-const prevTop = () => {
-  topIndex.value = prevItem(topIndex.value, tops);
+const triggerUpload = (type: "top" | "bottom") => {
+  if (type === "top") topFileInput.value?.click();
+  else bottomFileInput.value?.click();
 };
 
 const nextTop = () => {
-  topIndex.value = nextItem(topIndex.value, tops);
-};
-
-const prevBottom = () => {
-  bottomIndex.value = prevItem(bottomIndex.value, bottoms);
+  topIndex.value = nextItem(topIndex.value, tops.value, "top");
 };
 
 const nextBottom = () => {
-  bottomIndex.value = nextItem(bottomIndex.value, bottoms);
+  bottomIndex.value = nextItem(bottomIndex.value, bottoms.value, "bottom");
+};
+
+const prevTop = () => {
+  topIndex.value = prevItem(topIndex.value, tops.value);
+};
+
+const prevBottom = () => {
+  bottomIndex.value = prevItem(bottomIndex.value, bottoms.value);
+};
+
+const browseItem = () => {
+  playSound();
+  topIndex.value = Math.floor(Math.random() * tops.value.length);
+  bottomIndex.value = Math.floor(Math.random() * bottoms.value.length);
 };
 
 const dressMe = () => {
@@ -80,11 +114,20 @@ const dressMe = () => {
     showingOutfit.value = false;
   }, 5000);
 };
+
+const selectedTheme = ref("theme1");
+
+const backgrounds: Record<string, string> = {
+  theme1: "/images/backgrounds/theme1.jpg",
+  theme2: "/images/backgrounds/theme2.jpg",
+  theme3: "/images/backgrounds/theme3.jpg",
+};
+
+const backgroundStyle = computed(() => ({
+  backgroundImage: `url(${backgrounds[selectedTheme.value]})`,
+}));
 </script>
 
-<!-- Background -->
-<!-- ? Add some toggle to switch between basic and pink? -->
-<!-- ? Add sound effects to the buttons -->
 <style lang="css" scoped>
 * {
   font-family: Orbitron, Michroma, sans-serif;
@@ -95,29 +138,36 @@ const dressMe = () => {
 
 <template>
   <div
-    class="min-h-screen max-h-screen overflow-hidden flex flex-col justify-center items-center bg-[url('/leopard-print.jpg')] bg-red-500 bg-cover bg-no-repeat bg-center"
+    :style="backgroundStyle"
+    class="min-h-screen max-h-screen overflow-hidden flex flex-col justify-center items-center bg-red-500 bg-cover bg-no-repeat bg-center"
   >
     <!-- Nav -->
     <div class="w-full p-4 bg-black relative">
       <!-- TODO: Update name depending if the user is logged in -->
       <h1 class="text-white">CHER'S WARDROBE</h1>
-      <!-- TODO: Make this a drop down menu to select other seasons, pull from a different list of clothes depending on the season -->
-      <div class="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
-        <button
-          class="px-2 py-1 text-white bg-black border-2 border-t-gray-300 border-l-gray-300 border-r-gray-950 border-b-gray-950 active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
+      <!-- TODO: Pull from a different array of clothes depending on the season -->
+      <div
+        class="ml-20 absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 md:m-0"
+      >
+        <select
+          @click="playSound"
+          class="px-2 py-1 text-white bg-black outline-none border-2 border-t-gray-300 border-l-gray-300 border-r-gray-950 border-b-gray-950 active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
         >
-          FALL FASHIONS
-        </button>
+          <option>FALL FASHIONS</option>
+          <option>WINTER FASHIONS</option>
+          <option>SPRING FASHIONS</option>
+          <option>SUMMER FASHIONS</option>
+        </select>
       </div>
     </div>
 
     <!-- Main content -->
     <div
-      class="w-full max-w-xl md:max-w-3xl lg:max-w-4xl 2xl:max-w-6xl flex flex-1"
+      class="w-full max-w-xl md:max-w-3xl lg:max-w-4xl 2xl:max-w-6xl flex flex-col lg:flex-row flex-1"
     >
       <!-- Browse -->
       <!-- ? Have another button for auto dress -->
-      <div class="flex flex-col justify-end">
+      <div class="order-2 lg:order-1 flex flex-col justify-end">
         <div class="border-4 border-black">
           <button
             @click="browseItem"
@@ -131,7 +181,7 @@ const dressMe = () => {
       <!-- Clothes section -->
       <div
         id="clothing-section"
-        class="flex-1 flex flex-col border-8 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950"
+        class="order-1 lg:order-2 flex-1 flex flex-col border-8 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950"
       >
         <!-- If Dress Me button is clicked -->
         <div
@@ -147,14 +197,38 @@ const dressMe = () => {
           <!-- Tops -->
           <div class="flex flex-col flex-1">
             <div class="bg-white flex-1 flex items-center justify-center">
+              <template v-if="currentTop?.isUpload">
+                <button
+                  @click="triggerUpload('top')"
+                  class="flex flex-col items-center justify-center gap-2 px-4 py-3 text-xs bg-gray-300 border-4 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
+                >
+                  <img
+                    src="/images/icons/upload.png"
+                    alt="Upload icon"
+                    class="w-8 h-8 object-contain"
+                  />
+                  <span class="tracking-widest">UPLOAD PICTURE</span>
+                </button>
+              </template>
+
               <img
-                v-if="currentTop"
+                v-else-if="currentTop"
                 :src="currentTop.src"
                 :alt="currentTop.alt"
+                @contextmenu.prevent="removeItem(topIndex, 'top')"
                 class="max-h-40 lg:max-h-54 2xl:max-h-72 max-w-full object-contain"
               />
-              <!-- TODO: if no clothes add a plus button to add own clothes, remove background and lay flat (like depop) -->
+
               <span v-else>NO TOPS</span>
+
+              <!-- hidden input -->
+              <input
+                type="file"
+                ref="topFileInput"
+                class="hidden"
+                accept="image/*"
+                @change="(e) => handleUpload(e, 'top')"
+              />
             </div>
 
             <div
@@ -167,6 +241,7 @@ const dressMe = () => {
                 ⏮
               </button>
 
+              <!-- TODO: On click stop the auto dress -->
               <button
                 class="lg:text-2xl py-4 px-6 bg-gray-500 border-4 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
               >
@@ -185,13 +260,38 @@ const dressMe = () => {
           <!-- Bottoms -->
           <div class="flex flex-col flex-1">
             <div class="bg-white flex-1 flex items-center justify-center">
+              <template v-if="currentBottom?.isUpload">
+                <button
+                  @click="triggerUpload('bottom')"
+                  class="flex flex-col items-center justify-center gap-2 px-4 py-3 text-xs bg-gray-300 border-4 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
+                >
+                  <img
+                    src="/images/icons/upload.png"
+                    alt="Upload icon"
+                    class="w-8 h-8 object-contain"
+                  />
+                  <span class="tracking-widest">UPLOAD PICTURE</span>
+                </button>
+              </template>
+
               <img
-                v-if="currentBottom"
+                v-else-if="currentBottom"
                 :src="currentBottom.src"
                 :alt="currentBottom.alt"
+                @contextmenu.prevent="removeItem(bottomIndex, 'bottom')"
                 class="max-h-40 lg:max-h-54 2xl:max-h-72 max-w-full object-contain"
               />
+
               <span v-else>NO BOTTOMS</span>
+
+              <!-- hidden input -->
+              <input
+                type="file"
+                ref="bottomFileInput"
+                class="hidden"
+                accept="image/*"
+                @change="(e) => handleUpload(e, 'bottom')"
+              />
             </div>
 
             <div
@@ -222,7 +322,7 @@ const dressMe = () => {
       </div>
 
       <!-- Dress me -->
-      <div class="flex flex-col justify-end">
+      <div class="order-3 lg:order-3 flex flex-col justify-end">
         <div class="border-4 border-black">
           <button
             @click="dressMe"
@@ -239,7 +339,7 @@ const dressMe = () => {
     <div
       class="w-full overflow-x-auto flex flex-row justify-between p-4 bg-black shadow-lg"
     >
-      <div class="flex gap-4 text-white">
+      <div class="mr-4 flex gap-4 text-white">
         <button class="hover:text-gray-300">SHOES</button>
         <button class="hover:text-gray-300">JEWELRY</button>
         <button class="hover:text-gray-300">SCARVES</button>
@@ -248,11 +348,15 @@ const dressMe = () => {
         <button class="hover:text-gray-300">PANTS</button>
         <button class="hover:text-gray-300">SWEATERS</button>
       </div>
-      <button
-        class="ml-4 md:ml-0 px-2 py-1 text-white bg-black border-2 border-outset border-t-gray-300 border-l-gray-300 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
+      <select
+        v-model="selectedTheme"
+        @click="playSound"
+        class="py-1 text-white bg-black outline-none border-2 border-t-gray-300 border-l-gray-300 border-r-gray-950 border-b-gray-950"
       >
-        MORE
-      </button>
+        <option value="theme1">THEME 1</option>
+        <option value="theme2">THEME 2</option>
+        <option value="theme3">THEME 3</option>
+      </select>
     </div>
   </div>
 </template>
