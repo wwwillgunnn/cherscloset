@@ -11,6 +11,20 @@ const playSound = () => {
   buttonClickSound.play().catch(() => {});
 };
 
+const selectedTheme = ref("theme1");
+
+const backgrounds: Record<string, string> = {
+  theme1: "/images/backgrounds/theme1.jpg",
+  theme2: "/images/backgrounds/theme2.jpg",
+  theme3: "/images/backgrounds/theme3.jpg",
+  theme4: "/images/backgrounds/theme4.jpg",
+  theme5: "/images/backgrounds/theme5.jpg",
+};
+
+const backgroundStyle = computed(() => ({
+  backgroundImage: `url(${backgrounds[selectedTheme.value]})`,
+}));
+
 // TODO: Use supabase
 const tops = ref([
   { src: "/images/tops/yellow-jacket.png", alt: "Yellow jacket" },
@@ -32,21 +46,65 @@ const currentBottom = computed(() => bottoms.value[bottomIndex.value]);
 const topFileInput = ref<HTMLInputElement | null>(null);
 const bottomFileInput = ref<HTMLInputElement | null>(null);
 
-const handleUpload = (e: Event, type: "top" | "bottom") => {
+// try on state
+const userPhoto = ref<string | null>(null);
+const userPhotoInput = ref<HTMLInputElement | null>(null);
+
+const removeBackground = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append("image_file", file);
+  formData.append("size", "auto");
+
+  const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+    method: "POST",
+    headers: {
+      "X-Api-Key": import.meta.env.VITE_REMOVE_BG_API_KEY,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error("Background removal failed");
+  }
+
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
+
+const handleUpload = async (e: Event, type: "top" | "bottom") => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
 
-  const url = URL.createObjectURL(file);
+  try {
+    // remove background first
+    const url = await removeBackground(file);
 
-  const newItem = {
-    src: url,
-    alt: file.name,
-  };
+    const newItem = {
+      src: url,
+      alt: file.name,
+    };
 
-  if (type === "top") {
-    tops.value.splice(tops.value.length - 1, 0, newItem); // insert before upload slot
-  } else {
-    bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
+    if (type === "top") {
+      tops.value.splice(tops.value.length - 1, 0, newItem);
+    } else {
+      bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
+    }
+  } catch (err) {
+    console.error(err);
+
+    // fallback: show original image if API fails
+    const fallbackUrl = URL.createObjectURL(file);
+
+    const newItem = {
+      src: fallbackUrl,
+      alt: file.name,
+    };
+
+    if (type === "top") {
+      tops.value.splice(tops.value.length - 1, 0, newItem);
+    } else {
+      bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
+    }
   }
 };
 
@@ -106,26 +164,48 @@ const browseItem = () => {
   bottomIndex.value = Math.floor(Math.random() * bottoms.value.length);
 };
 
+onMounted(() => {
+  const saved = localStorage.getItem("userPhoto");
+  if (saved) userPhoto.value = saved;
+});
+
+// upload user photo
+const handleUserPhotoUpload = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+
+  try {
+    const url = await removeBackground(file);
+    userPhoto.value = url;
+    localStorage.setItem("userPhoto", url);
+  } catch {
+    const reader = new FileReader();
+    reader.onload = () => {
+      userPhoto.value = reader.result as string;
+      localStorage.setItem("userPhoto", userPhoto.value);
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
 const dressMe = () => {
   playSound();
+
+  // first time → ask for photo
+  if (!userPhoto.value) {
+    userPhotoInput.value?.click();
+    return;
+  }
+
+  // localStorage.removeItem("userPhoto");
+  // userPhoto.value = null;
+
   showingOutfit.value = true;
 
   setTimeout(() => {
     showingOutfit.value = false;
   }, 5000);
 };
-
-const selectedTheme = ref("theme1");
-
-const backgrounds: Record<string, string> = {
-  theme1: "/images/backgrounds/theme1.jpg",
-  theme2: "/images/backgrounds/theme2.jpg",
-  theme3: "/images/backgrounds/theme3.jpg",
-};
-
-const backgroundStyle = computed(() => ({
-  backgroundImage: `url(${backgrounds[selectedTheme.value]})`,
-}));
 </script>
 
 <style lang="css" scoped>
@@ -188,8 +268,31 @@ const backgroundStyle = computed(() => ({
           v-if="showingOutfit"
           class="h-full bg-white flex flex-col items-center justify-center"
         >
-          <h2 class="text-2xl mb-4">Your Outfit</h2>
-          <!-- TODO: Insert animation here (outfit preview with the selected clothes on person) -->
+          <!-- TRY ON STAGE -->
+          <div
+            class="relative w-full h-full h-[420px] bg-gray-100 border-4 border-black overflow-hidden"
+          >
+            <!-- USER BODY (BASE LAYER) -->
+            <img
+              v-if="userPhoto"
+              :src="userPhoto"
+              class="absolute inset-0 w-full h-full object-contain"
+            />
+
+            <!-- TOP LAYER (CHEST ZONE) -->
+            <img
+              v-if="currentTop && !currentTop.isUpload"
+              :src="currentTop.src"
+              class="absolute top-[15%] left-1/2 -translate-x-1/2 w-[75%] object-contain z-10 pointer-events-none"
+            />
+
+            <!-- BOTTOM LAYER (WAIST ZONE) -->
+            <img
+              v-if="currentBottom && !currentBottom.isUpload"
+              :src="currentBottom.src"
+              class="absolute top-[45%] left-1/2 -translate-x-1/2 w-[85%] object-contain z-10 pointer-events-none"
+            />
+          </div>
         </div>
 
         <!-- Normal view -->
@@ -256,6 +359,14 @@ const backgroundStyle = computed(() => ({
               </button>
             </div>
           </div>
+          <!-- hidden user upload input -->
+          <input
+            type="file"
+            ref="userPhotoInput"
+            class="hidden"
+            accept="image/*"
+            @change="handleUserPhotoUpload"
+          />
 
           <!-- Bottoms -->
           <div class="flex flex-col flex-1">
@@ -356,6 +467,8 @@ const backgroundStyle = computed(() => ({
         <option value="theme1">THEME 1</option>
         <option value="theme2">THEME 2</option>
         <option value="theme3">THEME 3</option>
+        <option value="theme4">THEME 4</option>
+        <option value="theme5">THEME 5</option>
       </select>
     </div>
   </div>
