@@ -10,22 +10,27 @@ export default defineEventHandler(async (event) => {
 
   try {
     const output = await replicate.run(
-      "lucataco/oot-diffusion:dc1a91e3d9e8c5e1f3c6d4b1d8b6e4a4e2f3c1a2b3c4d5e6f7g8h9i0j1k2l3m",
+      "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
       {
         input: {
-          model_image: body.userImage,
-          cloth_image: body.garmImg,
-          category: body.category === "upper_body" ? "upper" : "lower",
+          human_img: body.userImage,
+          garm_img: body.garmImg,
+          garment_des: body.garmentDes || "clothing item",
         },
       },
     );
 
     return {
-      result_url: Array.isArray(output) ? output[0] : output,
+      result_url:
+        output && typeof output === "object" && "url" in output
+          ? (output as { url: () => string }).url()
+          : output,
     };
   } catch (err: any) {
+    console.error("Replicate try-on failed:", err);
+
     return {
-      error: err.message || "Replicate failed",
+      error: err?.message || "Replicate failed",
     };
   }
 });

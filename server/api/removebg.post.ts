@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     file.filename || "upload.png",
   );
   body.append("size", "auto");
-
+  // ? switch to imgly if necessary
   const res = await fetch("https://api.remove.bg/v1.0/removebg", {
     method: "POST",
     headers: {

@@ -2,7 +2,12 @@
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
-  modules: ["@nuxtjs/tailwindcss", "@nuxt/eslint", "@nuxt/fonts"],
+  modules: [
+    "@nuxtjs/tailwindcss",
+    "@nuxt/eslint",
+    "@nuxt/fonts",
+    "@nuxtjs/supabase",
+  ],
   eslint: {
     config: {
       stylistic: {
@@ -18,6 +23,15 @@ export default defineNuxtConfig({
     removeBgApiKey: "",
     replicateApiToken: "",
     public: {},
+  },
+  supabase: {
+    redirectOptions: {
+      login: "/login",
+      callback: "/confirm",
+      include: undefined,
+      exclude: [],
+      saveRedirectToCookie: false,
+    },
   },
   app: {
     head: {

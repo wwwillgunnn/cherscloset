@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const supabase = useSupabaseClient();
+const STORAGE_BUCKET = "wardrobe";
+
 const selectedTheme = ref("theme1");
 const backgrounds: Record<string, string> = {
   theme1: "/images/backgrounds/theme1.jpg",
@@ -22,7 +25,6 @@ const userPhotoInput = ref<HTMLInputElement | null>(null);
 const loading = ref(false);
 const resultImage = ref<string | null>(null);
 
-// TODO: Use supabase
 const tops = ref([
   { src: "/images/tops/yellow-jacket.png", alt: "Yellow jacket" },
   { isUpload: true },
@@ -50,6 +52,55 @@ const playSound = () => {
   buttonClickSound.play().catch(() => {});
 };
 
+const fileExt = (name: string) => {
+  const parts = name.split(".");
+  return parts.length > 1 ? parts.pop()?.toLowerCase() || "png" : "png";
+};
+
+const makeFilePath = (folder: string, fileName: string) => {
+  const ext = fileExt(fileName);
+  return `${folder}/${crypto.randomUUID()}.${ext}`;
+};
+
+const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
+  const res = await fetch(dataUrl);
+  return await res.blob();
+};
+
+const uploadToSupabase = async (
+  fileOrBlob: File | Blob,
+  folder: "tops" | "bottoms" | "user-photos",
+  originalName = "image.png",
+) => {
+  const path = makeFilePath(folder, originalName);
+
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, fileOrBlob, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType:
+        fileOrBlob instanceof File
+          ? fileOrBlob.type || "image/png"
+          : "image/png",
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+
+  return data.publicUrl;
+};
+
+const uploadProcessedImage = async (
+  processedImageUrl: string,
+  folder: "tops" | "bottoms" | "user-photos",
+  originalName: string,
+) => {
+  const blob = await dataUrlToBlob(processedImageUrl);
+  return await uploadToSupabase(blob, folder, originalName);
+};
+
 const removeBackground = async (file: File): Promise<string> => {
   const formData = new FormData();
   formData.append("file", file); // must match backend
@@ -72,14 +123,35 @@ const removeBackground = async (file: File): Promise<string> => {
 const handleUpload = async (e: Event, type: "top" | "bottom") => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
+
   uploading.value = true;
 
   try {
-    // remove background first
-    const url = await removeBackground(file);
+    let finalUrl: string;
+
+    try {
+      // 1. remove background
+      const processedUrl = await removeBackground(file);
+
+      // 2. upload processed result to Supabase
+      finalUrl = await uploadProcessedImage(
+        processedUrl,
+        type === "top" ? "tops" : "bottoms",
+        file.name,
+      );
+    } catch (err) {
+      console.error("removeBackground failed, uploading original file:", err);
+
+      // fallback: upload original file directly to Supabase
+      finalUrl = await uploadToSupabase(
+        file,
+        type === "top" ? "tops" : "bottoms",
+        file.name,
+      );
+    }
 
     const newItem = {
-      src: url,
+      src: finalUrl,
       alt: file.name,
     };
 
@@ -89,27 +161,51 @@ const handleUpload = async (e: Event, type: "top" | "bottom") => {
       bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
     }
   } catch (err) {
-    console.error(err);
-
-    // fallback: show original image if API fails
-    const fallbackUrl = URL.createObjectURL(file);
-
-    const newItem = {
-      src: fallbackUrl,
-      alt: file.name,
-    };
-
-    if (type === "top") {
-      tops.value.splice(tops.value.length - 1, 0, newItem);
-    } else {
-      bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
-    }
+    console.error("Supabase upload failed:", err);
   } finally {
     uploading.value = false;
+
+    // reset input so same file can be re-selected
+    (e.target as HTMLInputElement).value = "";
   }
 };
 
-const removeItem = (index: number, type: "top" | "bottom") => {
+const handleUserPhotoUpload = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+
+  try {
+    let finalUrl: string;
+
+    try {
+      const processedUrl = await removeBackground(file);
+      finalUrl = await uploadProcessedImage(
+        processedUrl,
+        "user-photos",
+        file.name,
+      );
+    } catch (err) {
+      console.error("removeBackground failed for user photo:", err);
+      finalUrl = await uploadToSupabase(file, "user-photos", file.name);
+    }
+
+    userPhoto.value = finalUrl;
+    localStorage.setItem("userPhoto", finalUrl);
+  } catch (err) {
+    console.error("User photo upload failed:", err);
+  } finally {
+    (e.target as HTMLInputElement).value = "";
+  }
+};
+
+const getStoragePathFromPublicUrl = (url: string) => {
+  const marker = `/storage/v1/object/public/${STORAGE_BUCKET}/`;
+  const index = url.indexOf(marker);
+  if (index === -1) return null;
+  return url.slice(index + marker.length);
+};
+
+const removeItem = async (index: number, type: "top" | "bottom") => {
   const confirmed = confirm("Remove this item?");
   if (!confirmed) return;
 
@@ -119,7 +215,18 @@ const removeItem = (index: number, type: "top" | "bottom") => {
 
   if (list[index]?.isUpload) return;
 
+  const item = list[index];
+  const storagePath = item?.src ? getStoragePathFromPublicUrl(item.src) : null;
+
   list.splice(index, 1);
+
+  if (storagePath) {
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([storagePath]);
+
+    if (error) console.error("Failed to delete from Supabase:", error);
+  }
 
   if (type === "top") {
     if (topIndex.value >= list.length) topIndex.value = list.length - 1;
@@ -165,36 +272,17 @@ const browseItem = () => {
   bottomIndex.value = Math.floor(Math.random() * bottoms.value.length);
 };
 
-// upload user photo
-const handleUserPhotoUpload = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-
-  try {
-    const url = await removeBackground(file);
-    userPhoto.value = url;
-    localStorage.setItem("userPhoto", url);
-  } catch {
-    const reader = new FileReader();
-    reader.onload = () => {
-      userPhoto.value = reader.result as string;
-      localStorage.setItem("userPhoto", userPhoto.value);
-    };
-    reader.readAsDataURL(file);
-  }
-};
-
 const runTryOn = async (
   humanImg: string,
   garmentUrl: string,
-  category: string,
+  garmentDes: string,
 ) => {
   return await $fetch("/api/tryon", {
     method: "POST",
     body: {
       userImage: humanImg,
       garmImg: garmentUrl,
-      category,
+      garmentDes,
     },
   });
 };
@@ -220,8 +308,9 @@ const dressMe = async () => {
     !currentBottom.value ||
     !currentTop.value.src ||
     !currentBottom.value.src
-  )
+  ) {
     return;
+  }
 
   loading.value = true;
   showingOutfit.value = true;
@@ -231,7 +320,7 @@ const dressMe = async () => {
     const topRes = await runTryOn(
       userPhoto.value,
       currentTop.value.src,
-      "upper_body",
+      currentTop.value.alt || "top",
     );
 
     if (!isSuccess(topRes)) {
@@ -242,11 +331,11 @@ const dressMe = async () => {
 
     const topImage = topRes.result_url;
 
-    // STEP 2: BOTTOM (chained)
+    // STEP 2: BOTTOM
     const bottomRes = await runTryOn(
       topImage,
       currentBottom.value.src,
-      "lower_body",
+      currentBottom.value.alt || "bottom",
     );
 
     if (!isSuccess(bottomRes)) {
@@ -259,11 +348,10 @@ const dressMe = async () => {
 
     setTimeout(() => {
       showingOutfit.value = false;
-      // resultImage.value = null;
     }, 5000);
   } catch (err) {
     console.error("Try-on failed:", err);
-    // showingOutfit.value = false;
+    showingOutfit.value = false;
   } finally {
     loading.value = false;
   }
