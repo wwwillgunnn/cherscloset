@@ -66,7 +66,7 @@ const signInWithGoogle = async () => {
 
 <template>
   <div
-    class="min-h-screen flex items-center justify-center bg-[url('/images/backgrounds/theme1.jpg')] bg-no-repeat bg-cover"
+    class="min-h-screen flex items-center justify-center bg-[url('/images/login-background.png')] bg-no-repeat bg-cover"
   >
     <div class="w-full max-w-md bg-white rounded-2xl shadow p-8">
       <!-- TITLE -->
