@@ -1,18 +1,5 @@
 <script setup lang="ts">
-let buttonClickSound: HTMLAudioElement | null;
-
-onMounted(() => {
-  buttonClickSound = new Audio("/audio/mouse-click.mp3");
-});
-
-const playSound = () => {
-  if (!buttonClickSound) return;
-  buttonClickSound.currentTime = 0;
-  buttonClickSound.play().catch(() => {});
-};
-
 const selectedTheme = ref("theme1");
-
 const backgrounds: Record<string, string> = {
   theme1: "/images/backgrounds/theme1.jpg",
   theme2: "/images/backgrounds/theme2.jpg",
@@ -20,10 +7,20 @@ const backgrounds: Record<string, string> = {
   theme4: "/images/backgrounds/theme4.jpg",
   theme5: "/images/backgrounds/theme5.jpg",
 };
-
 const backgroundStyle = computed(() => ({
   backgroundImage: `url(${backgrounds[selectedTheme.value]})`,
 }));
+
+const topIndex = ref(0);
+const bottomIndex = ref(0);
+const showingOutfit = ref(false);
+const topFileInput = ref<HTMLInputElement | null>(null);
+const bottomFileInput = ref<HTMLInputElement | null>(null);
+const uploading = ref(false);
+const userPhoto = ref<string | null>(null);
+const userPhotoInput = ref<HTMLInputElement | null>(null);
+const loading = ref(false);
+const resultImage = ref<string | null>(null);
 
 // TODO: Use supabase
 const tops = ref([
@@ -36,44 +33,46 @@ const bottoms = ref([
   { isUpload: true },
 ]);
 
-const topIndex = ref(0);
-const bottomIndex = ref(0);
-const showingOutfit = ref(false);
-
 const currentTop = computed(() => tops.value[topIndex.value]);
 const currentBottom = computed(() => bottoms.value[bottomIndex.value]);
 
-const topFileInput = ref<HTMLInputElement | null>(null);
-const bottomFileInput = ref<HTMLInputElement | null>(null);
+let buttonClickSound: HTMLAudioElement | null;
 
-// try on state
-const userPhoto = ref<string | null>(null);
-const userPhotoInput = ref<HTMLInputElement | null>(null);
+onMounted(() => {
+  buttonClickSound = new Audio("/audio/mouse-click.mp3");
+  const saved = localStorage.getItem("userPhoto");
+  if (saved) userPhoto.value = saved;
+});
+
+const playSound = () => {
+  if (!buttonClickSound) return;
+  buttonClickSound.currentTime = 0;
+  buttonClickSound.play().catch(() => {});
+};
 
 const removeBackground = async (file: File): Promise<string> => {
   const formData = new FormData();
-  formData.append("image_file", file);
-  formData.append("size", "auto");
+  formData.append("file", file); // must match backend
 
-  const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+  const res = await fetch("/api/removebg", {
     method: "POST",
-    headers: {
-      "X-Api-Key": import.meta.env.VITE_REMOVE_BG_API_KEY,
-    },
     body: formData,
   });
 
   if (!res.ok) {
-    throw new Error("Background removal failed");
+    const err = await res.text();
+    console.error("Frontend error:", err);
+    throw new Error(err);
   }
 
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  const data = await res.json();
+  return data.image;
 };
 
 const handleUpload = async (e: Event, type: "top" | "bottom") => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
+  uploading.value = true;
 
   try {
     // remove background first
@@ -105,6 +104,8 @@ const handleUpload = async (e: Event, type: "top" | "bottom") => {
     } else {
       bottoms.value.splice(bottoms.value.length - 1, 0, newItem);
     }
+  } finally {
+    uploading.value = false;
   }
 };
 
@@ -164,11 +165,6 @@ const browseItem = () => {
   bottomIndex.value = Math.floor(Math.random() * bottoms.value.length);
 };
 
-onMounted(() => {
-  const saved = localStorage.getItem("userPhoto");
-  if (saved) userPhoto.value = saved;
-});
-
 // upload user photo
 const handleUserPhotoUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -188,24 +184,94 @@ const handleUserPhotoUpload = async (e: Event) => {
   }
 };
 
-const dressMe = () => {
+const runTryOn = async (
+  humanImg: string,
+  garmentUrl: string,
+  category: string,
+) => {
+  return await $fetch("/api/tryon", {
+    method: "POST",
+    body: {
+      userImage: humanImg,
+      garmImg: garmentUrl,
+      category,
+    },
+  });
+};
+
+const isSuccess = (res: any): res is { result_url: string } => {
+  return res && typeof res.result_url === "string";
+};
+
+const isError = (res: any): res is { error: any } => {
+  return res && typeof res.error !== "undefined";
+};
+
+const dressMe = async () => {
   playSound();
 
-  // first time → ask for photo
   if (!userPhoto.value) {
     userPhotoInput.value?.click();
     return;
   }
 
-  // localStorage.removeItem("userPhoto");
-  // userPhoto.value = null;
+  if (
+    !currentTop.value ||
+    !currentBottom.value ||
+    !currentTop.value.src ||
+    !currentBottom.value.src
+  )
+    return;
 
+  loading.value = true;
   showingOutfit.value = true;
 
-  setTimeout(() => {
-    showingOutfit.value = false;
-  }, 5000);
+  try {
+    // STEP 1: TOP
+    const topRes = await runTryOn(
+      userPhoto.value,
+      currentTop.value.src,
+      "upper_body",
+    );
+
+    if (!isSuccess(topRes)) {
+      throw new Error(
+        String(isError(topRes) ? topRes.error : "Top try-on failed"),
+      );
+    }
+
+    const topImage = topRes.result_url;
+
+    // STEP 2: BOTTOM (chained)
+    const bottomRes = await runTryOn(
+      topImage,
+      currentBottom.value.src,
+      "lower_body",
+    );
+
+    if (!isSuccess(bottomRes)) {
+      throw new Error(
+        String(isError(bottomRes) ? bottomRes.error : "Bottom try-on failed"),
+      );
+    }
+
+    resultImage.value = bottomRes.result_url;
+
+    setTimeout(() => {
+      showingOutfit.value = false;
+      // resultImage.value = null;
+    }, 5000);
+  } catch (err) {
+    console.error("Try-on failed:", err);
+    // showingOutfit.value = false;
+  } finally {
+    loading.value = false;
+  }
 };
+
+// if needed to reset user photo:
+// localStorage.removeItem("userPhoto");
+// userPhoto.value = null;
 </script>
 
 <style lang="css" scoped>
@@ -261,37 +327,35 @@ const dressMe = () => {
       <!-- Clothes section -->
       <div
         id="clothing-section"
-        class="order-1 lg:order-2 flex-1 flex flex-col border-8 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950"
+        class="order-1 lg:order-2 flex-1 min-h-0 flex flex-col border-8 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950"
       >
         <!-- If Dress Me button is clicked -->
         <div
           v-if="showingOutfit"
-          class="h-full bg-white flex flex-col items-center justify-center"
+          class="flex-1 min-h-0 bg-white flex flex-col items-center justify-center"
         >
           <!-- TRY ON STAGE -->
           <div
-            class="relative w-full h-full h-[420px] bg-gray-100 border-4 border-black overflow-hidden"
+            class="relative w-full flex-1 min-h-0 bg-gray-100 border-4 border-black flex items-center justify-center"
           >
-            <!-- USER BODY (BASE LAYER) -->
+            <!-- LOADING -->
+            <div
+              v-if="loading"
+              class="flex flex-col items-center justify-center h-full"
+            >
+              <div class="animate-bounce text-2xl mb-4">💅</div>
+              <p class="text-lg tracking-widest">TRYING ON OUTFIT...</p>
+            </div>
+
+            <!-- AI RESULT -->
             <img
-              v-if="userPhoto"
-              :src="userPhoto"
-              class="absolute inset-0 w-full h-full object-contain"
+              v-else-if="resultImage"
+              :src="resultImage"
+              class="w-full h-full object-contain"
             />
 
-            <!-- TOP LAYER (CHEST ZONE) -->
-            <img
-              v-if="currentTop && !currentTop.isUpload"
-              :src="currentTop.src"
-              class="absolute top-[15%] left-1/2 -translate-x-1/2 w-[75%] object-contain z-10 pointer-events-none"
-            />
-
-            <!-- BOTTOM LAYER (WAIST ZONE) -->
-            <img
-              v-if="currentBottom && !currentBottom.isUpload"
-              :src="currentBottom.src"
-              class="absolute top-[45%] left-1/2 -translate-x-1/2 w-[85%] object-contain z-10 pointer-events-none"
-            />
+            <!-- FALLBACK -->
+            <div v-else class="text-black">NO OUTFIT GENERATED</div>
           </div>
         </div>
 
@@ -301,7 +365,17 @@ const dressMe = () => {
           <div class="flex flex-col flex-1">
             <div class="bg-white flex-1 flex items-center justify-center">
               <template v-if="currentTop?.isUpload">
+                <div
+                  v-if="uploading"
+                  class="flex flex-col items-center justify-center"
+                >
+                  <div class="animate-pulse text-sm tracking-widest">
+                    UPLOADING IMAGE...
+                  </div>
+                </div>
+
                 <button
+                  v-else
                   @click="triggerUpload('top')"
                   class="flex flex-col items-center justify-center gap-2 px-4 py-3 text-xs bg-gray-300 border-4 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
                 >
@@ -372,7 +446,17 @@ const dressMe = () => {
           <div class="flex flex-col flex-1">
             <div class="bg-white flex-1 flex items-center justify-center">
               <template v-if="currentBottom?.isUpload">
+                <div
+                  v-if="uploading"
+                  class="flex flex-col items-center justify-center"
+                >
+                  <div class="animate-pulse text-sm tracking-widest">
+                    UPLOADING IMAGE...
+                  </div>
+                </div>
+
                 <button
+                  v-else
                   @click="triggerUpload('bottom')"
                   class="flex flex-col items-center justify-center gap-2 px-4 py-3 text-xs bg-gray-300 border-4 border-outset border-t-gray-400 border-l-gray-400 border-r-gray-950 border-b-gray-950 active:border-inset active:bg-blue-600 active:border-t-gray-950 active:border-l-gray-950 active:border-r-gray-400 active:border-b-gray-400"
                 >

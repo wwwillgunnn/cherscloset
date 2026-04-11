@@ -13,6 +13,12 @@ export default defineNuxtConfig({
       },
     },
   },
+  runtimeConfig: {
+    pixazoApiKey: "",
+    removeBgApiKey: "",
+    replicateApiToken: "",
+    public: {},
+  },
   app: {
     head: {
       title: "Cher's Closet",
