@@ -58,7 +58,7 @@ const signInWithGoogle = async () => {
   await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: "http://localhost:3000/confirm",
+      redirectTo: "https://cherscloset.vercel.app/confirm",
     },
   });
 };
