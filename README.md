@@ -2,6 +2,11 @@
 
 A modern, digital take on Cher Horowitz’s iconic wardrobe system from Clueless, this app lets you organise outfits, mix and match clothing pieces, and visualise your closet just like Cher did!
 
+Access the app here: [Cher's Closet](https://cherscloset.vercel.app)
+
+## Preview
+<img width="1913" height="958" alt="image" src="https://github.com/user-attachments/assets/127b3947-4686-4373-baff-a69b9c047a42" />
+
 ## Features
 - 🧥 Digital Wardrobe – Upload and manage your clothing items
 - 🎯 Outfit Planning – Mix and match pieces to create outfits
@@ -13,14 +18,6 @@ A modern, digital take on Cher Horowitz’s iconic wardrobe system from Clueless
 - Frontend: Nuxt 4 (Vue)
 - Backend / Database: Supabase
 - Hosting: Vercel
-
-## Live Demo
-
-Access the app here: [Cher's Closet](https://cherscloset.vercel.app)
-
-## Preview
-<img width="1913" height="958" alt="image" src="https://github.com/user-attachments/assets/127b3947-4686-4373-baff-a69b9c047a42" />
-
 
 # Nuxt Minimal Starter
 
